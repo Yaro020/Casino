@@ -1,0 +1,416 @@
+import random
+import tkinter as tk
+from tkinter import messagebox
+from dataclasses import dataclass, field
+from typing import List, Tuple, Optional
+
+# ------------------ Game model ------------------
+SUITS = ["♠", "♥", "♦", "♣"]
+RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
+RANK_VALUES = {
+    "A": 11, "2": 2, "3": 3, "4": 4, "5": 5, "6": 6, "7": 7,
+    "8": 8, "9": 9, "10": 10, "J": 10, "Q": 10, "K": 10
+}
+Card = Tuple[str, str]  # (rank, suit)
+
+def is_red_suit(suit: str) -> bool:
+    return suit in ("♥", "♦")
+
+@dataclass
+class Deck:
+    cards: List[Card] = field(default_factory=list)
+
+    def reset(self) -> None:
+        self.cards = [(r, s) for s in SUITS for r in RANKS]
+        random.shuffle(self.cards)
+
+    def deal(self) -> Card:
+        if not self.cards:
+            self.reset()
+        return self.cards.pop()
+
+@dataclass
+class Hand:
+    cards: List[Card] = field(default_factory=list)
+
+    def add(self, c: Card) -> None:
+        self.cards.append(c)
+
+    def value(self) -> int:
+        total = 0
+        aces = 0
+        for r, _ in self.cards:
+            total += RANK_VALUES[r]
+            if r == "A":
+                aces += 1
+        while total > 21 and aces > 0:
+            total -= 10
+            aces -= 1
+        return total
+
+    def blackjack(self) -> bool:
+        return len(self.cards) == 2 and self.value() == 21
+
+    def bust(self) -> bool:
+        return self.value() > 21
+
+
+# ------------------ Royal theme ------------------
+THEME = {
+    "bg_top": "#07120c",
+    "bg_bottom": "#0b1e14",
+    "felt": "#0f6a45",
+    "felt2": "#0c5a3a",
+    "felt_shadow": "#062e1d",
+    "gold": "#d6b15a",
+    "gold_dark": "#8e6b22",
+    "mahogany": "#2a0d0c",
+    "mahogany_hi": "#4a1614",
+    "text": "#f6f0dd",
+    "muted": "#d8cfb6",
+
+    "btn_bg": "#2b0f0d",
+    "btn_fg": "#f6f0dd",
+    "btn_active": "#4b1b17",
+
+    "card": "#fbfbf6",
+    "card_edge": "#e7dfc6",
+    "card_back": "#162a57",
+    "card_back2": "#0f1f44",
+    "card_back_gold": "#d6b15a",
+
+    "red": "#b0182a",
+    "black": "#121212",
+}
+
+def clamp(v: int) -> int:
+    return max(0, min(255, v))
+
+def hex_to_rgb(h: str) -> Tuple[int, int, int]:
+    h = h.lstrip("#")
+    return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+
+def rgb_to_hex(rgb: Tuple[int, int, int]) -> str:
+    r, g, b = rgb
+    return f"#{clamp(r):02x}{clamp(g):02x}{clamp(b):02x}"
+
+def lerp(a: int, b: int, t: float) -> int:
+    return int(a + (b - a) * t)
+
+def lerp_color(c1: str, c2: str, t: float) -> str:
+    r1, g1, b1 = hex_to_rgb(c1)
+    r2, g2, b2 = hex_to_rgb(c2)
+    return rgb_to_hex((lerp(r1, r2, t), lerp(g1, g2, t), lerp(b1, b2, t)))
+
+
+class RoyalTableCanvas(tk.Canvas):
+    def __init__(self, master, **kwargs):
+        super().__init__(master, highlightthickness=0, **kwargs)
+        self.bind("<Configure>", lambda e: self.redraw_background())
+
+    def redraw_background(self) -> None:
+        self.delete("bg")
+        w = self.winfo_width()
+        h = self.winfo_height()
+        if w <= 2 or h <= 2:
+            return
+
+        # Background gradient
+        steps = 70
+        for i in range(steps):
+            y0 = int(h * i / steps)
+            y1 = int(h * (i + 1) / steps)
+            col = lerp_color(THEME["bg_top"], THEME["bg_bottom"], i / (steps - 1))
+            self.create_rectangle(0, y0, w, y1, fill=col, outline="", tags=("bg",))
+
+        # Soft spotlight (IMPORTANT: always keep it behind)
+        self.create_oval(-w * 0.15, -h * 0.35, w * 1.15, h * 0.9,
+                         fill="#0d2a1c", outline="", tags=("bg",))
+        self.create_oval(-w * 0.05, -h * 0.25, w * 1.05, h * 0.75,
+                         fill="#103020", outline="", tags=("bg",))
+
+        # Table
+        pad = 26
+        rim = 12
+        x0, y0 = pad, int(h * 0.16)
+        x1, y1 = w - pad, h - pad
+
+        # shadow
+        self.create_oval(x0 + 10, y0 + 18, x1 + 10, y1 + 18,
+                         fill=THEME["felt_shadow"], outline="", tags=("bg",))
+
+        # rim (mahogany + gold)
+        self.create_oval(x0, y0, x1, y1,
+                         fill=THEME["mahogany"], outline=THEME["gold_dark"],
+                         width=3, tags=("bg",))
+        self.create_oval(x0 + rim, y0 + rim, x1 - rim, y1 - rim,
+                         fill=THEME["felt"], outline=THEME["gold"],
+                         width=3, tags=("bg",))
+
+        # felt pattern (subtle)
+        inner_x0, inner_y0 = x0 + rim + 10, y0 + rim + 10
+        inner_x1, inner_y1 = x1 - rim - 10, y1 - rim - 10
+        for yy in range(int(inner_y0), int(inner_y1), 22):
+            for xx in range(int(inner_x0), int(inner_x1), 22):
+                self.create_oval(xx, yy, xx + 2, yy + 2, fill=THEME["felt2"], outline="", tags=("bg",))
+
+        # >>> FIX: always send bg to the very back
+        self.tag_lower("bg")
+
+    def draw_rounded_rect(self, x0, y0, x1, y1, r=16, **kwargs):
+        points = [
+            x0 + r, y0,
+            x1 - r, y0,
+            x1, y0,
+            x1, y0 + r,
+            x1, y1 - r,
+            x1, y1,
+            x1 - r, y1,
+            x0 + r, y1,
+            x0, y1,
+            x0, y1 - r,
+            x0, y0 + r,
+            x0, y0,
+        ]
+        return self.create_polygon(points, smooth=True, **kwargs)
+
+    def draw_card(self, x, y, w, h, card: Optional[Card], face_down: bool = False, tag="cards"):
+        # drop shadow
+        shadow = 7
+        self.draw_rounded_rect(x + shadow, y + shadow, x + w + shadow, y + h + shadow,
+                               r=18, fill="#000000", outline="", stipple="gray50", tags=(tag,))
+
+        # outer card
+        self.draw_rounded_rect(x, y, x + w, y + h, r=18,
+                               fill=THEME["card"], outline=THEME["card_edge"], width=2, tags=(tag,))
+
+        if face_down or card is None:
+            inset = 10
+            self.draw_rounded_rect(x + inset, y + inset, x + w - inset, y + h - inset,
+                                   r=14, fill=THEME["card_back"], outline=THEME["card_back_gold"],
+                                   width=2, tags=(tag,))
+
+            # back stripes
+            for i in range(7):
+                t = i / 6
+                col = lerp_color(THEME["card_back"], THEME["card_back2"], t)
+                yy0 = y + inset + int((h - 2 * inset) * i / 7)
+                yy1 = y + inset + int((h - 2 * inset) * (i + 1) / 7)
+                self.create_rectangle(x + inset + 2, yy0, x + w - inset - 2, yy1,
+                                      fill=col, outline="", tags=(tag,))
+
+            cx, cy = x + w / 2, y + h / 2
+            self.create_text(cx, cy - 10, text="♛", fill=THEME["card_back_gold"],
+                             font=("Helvetica", int(h * 0.28), "bold"), tags=(tag,))
+            self.create_text(cx, cy + 38, text="ROYAL", fill=THEME["card_back_gold"],
+                             font=("Helvetica", 14, "bold"), tags=(tag,))
+            return
+
+        rank, suit = card
+        col = THEME["red"] if is_red_suit(suit) else THEME["black"]
+
+        # corner
+        self.create_text(x + 18, y + 14, text=rank, anchor="nw",
+                         fill=col, font=("Helvetica", 18, "bold"), tags=(tag,))
+        self.create_text(x + 18, y + 38, text=suit, anchor="nw",
+                         fill=col, font=("Helvetica", 18, "bold"), tags=(tag,))
+
+        self.create_text(x + w - 18, y + h - 14, text=rank, anchor="se",
+                         fill=col, font=("Helvetica", 18, "bold"), tags=(tag,))
+        self.create_text(x + w - 18, y + h - 38, text=suit, anchor="se",
+                         fill=col, font=("Helvetica", 18, "bold"), tags=(tag,))
+
+        # center
+        center_size = int(h * 0.46)
+        self.create_text(x + w / 2, y + h / 2 + 4, text=suit,
+                         fill=col, font=("Helvetica", center_size, "bold"), tags=(tag,))
+
+
+# ------------------ App ------------------
+class BlackjackRoyalApp:
+    def __init__(self, root: tk.Tk):
+        self.root = root
+        self.root.title("Blackjack Royale")
+        self.root.minsize(1000, 650)
+
+        self.deck = Deck()
+        self.deck.reset()
+
+        self.player = Hand()
+        self.dealer = Hand()
+        self.round_over = True
+        self.hide_dealer_first = True
+
+        self.main = tk.Frame(root, bg=THEME["bg_bottom"])
+        self.main.pack(fill="both", expand=True)
+
+        self.canvas = RoyalTableCanvas(self.main, bg=THEME["bg_bottom"])
+        self.canvas.pack(fill="both", expand=True)
+
+        self.status_var = tk.StringVar(value="Klik op New Game om te starten.")
+
+        self.controls = tk.Frame(self.main, bg=THEME["bg_bottom"])
+        self.controls.place(relx=0.5, rely=0.92, anchor="center")
+
+        self.btn_new = tk.Button(self.controls, text="New Game", width=12, command=self.new_game,
+                                 bg=THEME["btn_bg"], fg=THEME["btn_fg"],
+                                 activebackground=THEME["btn_active"], activeforeground=THEME["btn_fg"],
+                                 relief="flat", padx=10, pady=10)
+        self.btn_hit = tk.Button(self.controls, text="Hit", width=12, command=self.hit, state="disabled",
+                                 bg=THEME["btn_bg"], fg=THEME["btn_fg"],
+                                 activebackground=THEME["btn_active"], activeforeground=THEME["btn_fg"],
+                                 relief="flat", padx=10, pady=10)
+        self.btn_stand = tk.Button(self.controls, text="Stand", width=12, command=self.stand, state="disabled",
+                                   bg=THEME["btn_bg"], fg=THEME["btn_fg"],
+                                   activebackground=THEME["btn_active"], activeforeground=THEME["btn_fg"],
+                                   relief="flat", padx=10, pady=10)
+
+        self.btn_new.grid(row=0, column=0, padx=12)
+        self.btn_hit.grid(row=0, column=1, padx=12)
+        self.btn_stand.grid(row=0, column=2, padx=12)
+
+        self.canvas.bind("<Configure>", lambda e: self.render())
+        self.render()
+
+    def set_controls(self, playing: bool) -> None:
+        self.btn_hit.config(state=("normal" if playing else "disabled"))
+        self.btn_stand.config(state=("normal" if playing else "disabled"))
+
+    def new_game(self) -> None:
+        if len(self.deck.cards) < 18:
+            self.deck.reset()
+
+        self.player = Hand()
+        self.dealer = Hand()
+        self.round_over = False
+        self.hide_dealer_first = True
+
+        self.player.add(self.deck.deal())
+        self.dealer.add(self.deck.deal())
+        self.player.add(self.deck.deal())
+        self.dealer.add(self.deck.deal())
+
+        self.status_var.set("Jouw beurt: Hit of Stand?")
+        self.set_controls(True)
+        self.render()
+
+        if self.player.blackjack() or self.dealer.blackjack():
+            self.finish_round(immediate=True)
+
+    def hit(self) -> None:
+        if self.round_over:
+            return
+        self.player.add(self.deck.deal())
+        self.render()
+        if self.player.bust():
+            self.finish_round()
+
+    def stand(self) -> None:
+        if self.round_over:
+            return
+        self.finish_round()
+
+    def dealer_play(self) -> None:
+        while self.dealer.value() < 17:
+            self.dealer.add(self.deck.deal())
+
+    def finish_round(self, immediate: bool = False) -> None:
+        self.round_over = True
+        self.hide_dealer_first = False
+        self.set_controls(False)
+
+        if not self.player.bust() and not immediate:
+            self.dealer_play()
+
+        self.render()
+
+        p = self.player.value()
+        d = self.dealer.value()
+
+        if self.player.blackjack() and self.dealer.blackjack():
+            msg = "Push. Beide Blackjack!"
+        elif self.player.blackjack():
+            msg = "Blackjack! Jij wint 🎉"
+        elif self.dealer.blackjack():
+            msg = "Dealer heeft Blackjack. Jij verliest."
+        elif self.player.bust():
+            msg = "Bust! Over 21. Jij verliest."
+        elif self.dealer.bust():
+            msg = "Dealer bust! Jij wint 🎉"
+        else:
+            msg = "Jij wint 🎉" if p > d else "Dealer wint." if p < d else "Push (gelijkspel)."
+
+        self.status_var.set(msg)
+        messagebox.showinfo("Ronde afgelopen", msg)
+
+    def render(self) -> None:
+        self.canvas.delete("cards")
+        self.canvas.delete("overlay")
+
+        w = self.canvas.winfo_width()
+        h = self.canvas.winfo_height()
+        if w <= 2 or h <= 2:
+            return
+
+        # Royal title plaque
+        self.canvas.create_text(
+            w / 2, 42, text="BLACKJACK ROYALE",
+            fill=THEME["gold"], font=("Helvetica", 28, "bold"),
+            tags=("overlay",)
+        )
+        self.canvas.create_text(
+            w / 2, 78, text=self.status_var.get(),
+            fill=THEME["muted"], font=("Helvetica", 14),
+            tags=("overlay",)
+        )
+
+        dealer_val = "?" if (self.hide_dealer_first and not self.round_over) else str(self.dealer.value()) if self.dealer.cards else "-"
+        player_val = str(self.player.value()) if self.player.cards else "-"
+
+        self.canvas.create_text(
+            w / 2, int(h * 0.22), text=f"Dealer • waarde: {dealer_val}",
+            fill=THEME["text"], font=("Helvetica", 14, "bold"),
+            tags=("overlay",)
+        )
+        self.canvas.create_text(
+            w / 2, int(h * 0.62), text=f"Jij • waarde: {player_val}",
+            fill=THEME["text"], font=("Helvetica", 14, "bold"),
+            tags=("overlay",)
+        )
+
+        card_w = 120
+        card_h = 175
+        gap = 22
+
+        # Dealer
+        dealer_y = int(h * 0.26)
+        dealer_cards = self.dealer.cards[:]
+        dealer_total = len(dealer_cards) * card_w + max(0, len(dealer_cards) - 1) * gap
+        dealer_x0 = int((w - dealer_total) / 2)
+
+        for i, c in enumerate(dealer_cards):
+            x = dealer_x0 + i * (card_w + gap)
+            face_down = (i == 0 and self.hide_dealer_first and not self.round_over)
+            self.canvas.draw_card(x, dealer_y, card_w, card_h, c, face_down=face_down, tag="cards")
+
+        # Player
+        player_y = int(h * 0.66) - card_h
+        player_cards = self.player.cards[:]
+        player_total = len(player_cards) * card_w + max(0, len(player_cards) - 1) * gap
+        player_x0 = int((w - player_total) / 2)
+
+        for i, c in enumerate(player_cards):
+            x = player_x0 + i * (card_w + gap)
+            self.canvas.draw_card(x, player_y, card_w, card_h, c, face_down=False, tag="cards")
+
+        # >>> FIX: ensure overlay always on top
+        self.canvas.tag_raise("overlay")
+
+
+def main():
+    root = tk.Tk()
+    app = BlackjackRoyalApp(root)
+    root.mainloop()
+
+if __name__ == "__main__":
+    main()

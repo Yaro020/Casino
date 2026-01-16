@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
 # ------------------ Game model ------------------
+SHOE_DECKS = 6
 SUITS = ["♠", "♥", "♦", "♣"]
 RANKS = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"]
 RANK_VALUES = {
@@ -21,7 +22,7 @@ class Deck:
     cards: List[Card] = field(default_factory=list)
 
     def reset(self) -> None:
-        self.cards = [(r, s) for s in SUITS for r in RANKS]
+        self.cards = [(r, s) for _ in range(SHOE_DECKS) for s in SUITS for r in RANKS]
         random.shuffle(self.cards)
 
     def deal(self) -> Card:
@@ -154,6 +155,19 @@ class RoyalTableCanvas(tk.Canvas):
             for xx in range(int(inner_x0), int(inner_x1), 22):
                 self.create_oval(xx, yy, xx + 2, yy + 2, fill=THEME["felt2"], outline="", tags=("bg",))
 
+        # Decorative chips around the table
+        chip_positions = [
+            (inner_x0 + 40, inner_y0 + 40),
+            (inner_x1 - 70, inner_y0 + 60),
+            (inner_x0 + 60, inner_y1 - 70),
+            (inner_x1 - 90, inner_y1 - 80),
+        ]
+        for cx, cy in chip_positions:
+            self.create_oval(cx, cy, cx + 46, cy + 46, fill=THEME["mahogany_hi"],
+                             outline=THEME["gold"], width=2, tags=("bg",))
+            self.create_oval(cx + 8, cy + 8, cx + 38, cy + 38, fill=THEME["bg_bottom"],
+                             outline=THEME["gold_dark"], width=2, tags=("bg",))
+
         # >>> FIX: always send bg to the very back
         self.tag_lower("bg")
 
@@ -240,6 +254,11 @@ class BlackjackRoyalApp:
         self.dealer = Hand()
         self.round_over = True
         self.hide_dealer_first = True
+        self.bankroll = 1000
+        self.bet = 0
+        self.wins = 0
+        self.losses = 0
+        self.pushes = 0
 
         self.main = tk.Frame(root, bg=THEME["bg_bottom"])
         self.main.pack(fill="both", expand=True)
@@ -247,7 +266,10 @@ class BlackjackRoyalApp:
         self.canvas = RoyalTableCanvas(self.main, bg=THEME["bg_bottom"])
         self.canvas.pack(fill="both", expand=True)
 
-        self.status_var = tk.StringVar(value="Klik op New Game om te starten.")
+        self.status_var = tk.StringVar(value="Plaats een inzet om te beginnen.")
+        self.bankroll_var = tk.StringVar(value=f"Saldo: €{self.bankroll}")
+        self.bet_var = tk.StringVar(value="Inzet: €0")
+        self.stats_var = tk.StringVar(value="W: 0 • V: 0 • Push: 0")
 
         self.controls = tk.Frame(self.main, bg=THEME["bg_bottom"])
         self.controls.place(relx=0.5, rely=0.92, anchor="center")
@@ -269,14 +291,87 @@ class BlackjackRoyalApp:
         self.btn_hit.grid(row=0, column=1, padx=12)
         self.btn_stand.grid(row=0, column=2, padx=12)
 
+        self.bet_controls = tk.Frame(self.main, bg=THEME["bg_bottom"])
+        self.bet_controls.place(relx=0.5, rely=0.84, anchor="center")
+
+        self.btn_chip_10 = tk.Button(self.bet_controls, text="€10", width=8,
+                                     command=lambda: self.adjust_bet(10),
+                                     bg=THEME["btn_bg"], fg=THEME["btn_fg"],
+                                     activebackground=THEME["btn_active"], activeforeground=THEME["btn_fg"],
+                                     relief="flat", padx=8, pady=6)
+        self.btn_chip_25 = tk.Button(self.bet_controls, text="€25", width=8,
+                                     command=lambda: self.adjust_bet(25),
+                                     bg=THEME["btn_bg"], fg=THEME["btn_fg"],
+                                     activebackground=THEME["btn_active"], activeforeground=THEME["btn_fg"],
+                                     relief="flat", padx=8, pady=6)
+        self.btn_chip_50 = tk.Button(self.bet_controls, text="€50", width=8,
+                                     command=lambda: self.adjust_bet(50),
+                                     bg=THEME["btn_bg"], fg=THEME["btn_fg"],
+                                     activebackground=THEME["btn_active"], activeforeground=THEME["btn_fg"],
+                                     relief="flat", padx=8, pady=6)
+        self.btn_chip_100 = tk.Button(self.bet_controls, text="€100", width=8,
+                                      command=lambda: self.adjust_bet(100),
+                                      bg=THEME["btn_bg"], fg=THEME["btn_fg"],
+                                      activebackground=THEME["btn_active"], activeforeground=THEME["btn_fg"],
+                                      relief="flat", padx=8, pady=6)
+        self.btn_clear_bet = tk.Button(self.bet_controls, text="Clear", width=8,
+                                       command=self.clear_bet,
+                                       bg=THEME["btn_bg"], fg=THEME["btn_fg"],
+                                       activebackground=THEME["btn_active"], activeforeground=THEME["btn_fg"],
+                                       relief="flat", padx=8, pady=6)
+
+        self.btn_chip_10.grid(row=0, column=0, padx=6)
+        self.btn_chip_25.grid(row=0, column=1, padx=6)
+        self.btn_chip_50.grid(row=0, column=2, padx=6)
+        self.btn_chip_100.grid(row=0, column=3, padx=6)
+        self.btn_clear_bet.grid(row=0, column=4, padx=6)
+
+        self.bet_buttons = [
+            self.btn_chip_10,
+            self.btn_chip_25,
+            self.btn_chip_50,
+            self.btn_chip_100,
+            self.btn_clear_bet,
+        ]
+
         self.canvas.bind("<Configure>", lambda e: self.render())
         self.render()
 
     def set_controls(self, playing: bool) -> None:
         self.btn_hit.config(state=("normal" if playing else "disabled"))
         self.btn_stand.config(state=("normal" if playing else "disabled"))
+        bet_state = "disabled" if playing else "normal"
+        for btn in self.bet_buttons:
+            btn.config(state=bet_state)
+
+    def adjust_bet(self, amount: int) -> None:
+        if not self.round_over:
+            return
+        if self.bankroll <= 0:
+            self.status_var.set("Je saldo is op. Start opnieuw om te resetten.")
+            return
+        if self.bet + amount > self.bankroll:
+            self.status_var.set("Onvoldoende saldo voor deze inzet.")
+            return
+        self.bet += amount
+        self.bet_var.set(f"Inzet: €{self.bet}")
+        self.status_var.set("Klaar voor de deal. Druk op New Game.")
+
+    def clear_bet(self) -> None:
+        if not self.round_over:
+            return
+        self.bet = 0
+        self.bet_var.set("Inzet: €0")
+        self.status_var.set("Plaats een inzet om te beginnen.")
 
     def new_game(self) -> None:
+        if self.bet <= 0:
+            self.status_var.set("Plaats eerst een inzet.")
+            messagebox.showinfo("Inzet nodig", "Plaats eerst een inzet om te spelen.")
+            return
+        if self.bet > self.bankroll:
+            self.status_var.set("Onvoldoende saldo voor deze inzet.")
+            return
         if len(self.deck.cards) < 18:
             self.deck.reset()
 
@@ -284,6 +379,8 @@ class BlackjackRoyalApp:
         self.dealer = Hand()
         self.round_over = False
         self.hide_dealer_first = True
+        self.bankroll -= self.bet
+        self.bankroll_var.set(f"Saldo: €{self.bankroll}")
 
         self.player.add(self.deck.deal())
         self.dealer.add(self.deck.deal())
@@ -329,17 +426,39 @@ class BlackjackRoyalApp:
 
         if self.player.blackjack() and self.dealer.blackjack():
             msg = "Push. Beide Blackjack!"
+            self.pushes += 1
+            self.bankroll += self.bet
         elif self.player.blackjack():
             msg = "Blackjack! Jij wint 🎉"
+            self.wins += 1
+            self.bankroll += int(self.bet * 2.5)
         elif self.dealer.blackjack():
             msg = "Dealer heeft Blackjack. Jij verliest."
+            self.losses += 1
         elif self.player.bust():
             msg = "Bust! Over 21. Jij verliest."
+            self.losses += 1
         elif self.dealer.bust():
             msg = "Dealer bust! Jij wint 🎉"
+            self.wins += 1
+            self.bankroll += self.bet * 2
         else:
-            msg = "Jij wint 🎉" if p > d else "Dealer wint." if p < d else "Push (gelijkspel)."
+            if p > d:
+                msg = "Jij wint 🎉"
+                self.wins += 1
+                self.bankroll += self.bet * 2
+            elif p < d:
+                msg = "Dealer wint."
+                self.losses += 1
+            else:
+                msg = "Push (gelijkspel)."
+                self.pushes += 1
+                self.bankroll += self.bet
 
+        self.bet = 0
+        self.bankroll_var.set(f"Saldo: €{self.bankroll}")
+        self.bet_var.set("Inzet: €0")
+        self.stats_var.set(f"W: {self.wins} • V: {self.losses} • Push: {self.pushes}")
         self.status_var.set(msg)
         messagebox.showinfo("Ronde afgelopen", msg)
 
@@ -361,6 +480,11 @@ class BlackjackRoyalApp:
         self.canvas.create_text(
             w / 2, 78, text=self.status_var.get(),
             fill=THEME["muted"], font=("Helvetica", 14),
+            tags=("overlay",)
+        )
+        self.canvas.create_text(
+            w / 2, 108, text=f"{self.bankroll_var.get()}    {self.bet_var.get()}    {self.stats_var.get()}",
+            fill=THEME["muted"], font=("Helvetica", 13, "bold"),
             tags=("overlay",)
         )
 

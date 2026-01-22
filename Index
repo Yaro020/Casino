@@ -147,6 +147,8 @@ class RoyalTableCanvas(tk.Canvas):
         self.create_oval(x0 + rim, y0 + rim, x1 - rim, y1 - rim,
                          fill=THEME["felt"], outline=THEME["gold"],
                          width=3, tags=("bg",))
+        self.create_oval(x0 + 4, y0 + 4, x1 - 4, y1 - 4,
+                         outline=THEME["mahogany_hi"], width=2, tags=("bg",))
 
         # felt pattern (subtle)
         inner_x0, inner_y0 = x0 + rim + 10, y0 + rim + 10
@@ -473,6 +475,11 @@ class BlackjackRoyalApp:
 
         # Royal title plaque
         self.canvas.create_text(
+            w / 2 + 2, 44, text="BLACKJACK ROYALE",
+            fill=THEME["mahogany_hi"], font=("Helvetica", 28, "bold"),
+            tags=("overlay",)
+        )
+        self.canvas.create_text(
             w / 2, 42, text="BLACKJACK ROYALE",
             fill=THEME["gold"], font=("Helvetica", 28, "bold"),
             tags=("overlay",)
@@ -492,23 +499,30 @@ class BlackjackRoyalApp:
         player_val = str(self.player.value()) if self.player.cards else "-"
 
         self.canvas.create_text(
-            w / 2, int(h * 0.22), text=f"Dealer • waarde: {dealer_val}",
-            fill=THEME["text"], font=("Helvetica", 14, "bold"),
+            w / 2, int(h * 0.20), text=f"Dealer • waarde: {dealer_val}",
+            fill=THEME["text"], font=("Helvetica", 16, "bold"),
             tags=("overlay",)
         )
         self.canvas.create_text(
             w / 2, int(h * 0.62), text=f"Jij • waarde: {player_val}",
-            fill=THEME["text"], font=("Helvetica", 14, "bold"),
+            fill=THEME["text"], font=("Helvetica", 16, "bold"),
             tags=("overlay",)
         )
 
-        card_w = 120
-        card_h = 175
-        gap = 22
+        def layout_for(count: int) -> Tuple[int, int, int]:
+            gap = 18
+            base_w = 120
+            max_width = int(w * 0.75)
+            if count > 0:
+                needed = count * base_w + (count - 1) * gap
+                if needed > max_width:
+                    base_w = max(80, int((max_width - (count - 1) * gap) / count))
+            return base_w, int(base_w * 1.45), gap
 
         # Dealer
-        dealer_y = int(h * 0.26)
         dealer_cards = self.dealer.cards[:]
+        card_w, card_h, gap = layout_for(len(dealer_cards))
+        dealer_y = int(h * 0.24)
         dealer_total = len(dealer_cards) * card_w + max(0, len(dealer_cards) - 1) * gap
         dealer_x0 = int((w - dealer_total) / 2)
 
@@ -518,14 +532,51 @@ class BlackjackRoyalApp:
             self.canvas.draw_card(x, dealer_y, card_w, card_h, c, face_down=face_down, tag="cards")
 
         # Player
-        player_y = int(h * 0.66) - card_h
         player_cards = self.player.cards[:]
+        card_w, card_h, gap = layout_for(len(player_cards))
+        player_y = int(h * 0.70) - card_h
         player_total = len(player_cards) * card_w + max(0, len(player_cards) - 1) * gap
         player_x0 = int((w - player_total) / 2)
 
         for i, c in enumerate(player_cards):
             x = player_x0 + i * (card_w + gap)
             self.canvas.draw_card(x, player_y, card_w, card_h, c, face_down=False, tag="cards")
+
+        # Value badges
+        badge_w = 170
+        badge_h = 32
+        self.canvas.draw_rounded_rect(
+            w / 2 - badge_w / 2, dealer_y - 44, w / 2 + badge_w / 2, dealer_y - 44 + badge_h,
+            r=14, fill=THEME["mahogany_hi"], outline=THEME["gold_dark"], width=2, tags=("overlay",)
+        )
+        self.canvas.create_text(
+            w / 2, dealer_y - 28, text=f"Dealer waarde: {dealer_val}",
+            fill=THEME["text"], font=("Helvetica", 12, "bold"), tags=("overlay",)
+        )
+        self.canvas.draw_rounded_rect(
+            w / 2 - badge_w / 2, player_y + card_h + 12, w / 2 + badge_w / 2, player_y + card_h + 12 + badge_h,
+            r=14, fill=THEME["mahogany_hi"], outline=THEME["gold_dark"], width=2, tags=("overlay",)
+        )
+        self.canvas.create_text(
+            w / 2, player_y + card_h + 28, text=f"Jij waarde: {player_val}",
+            fill=THEME["text"], font=("Helvetica", 12, "bold"), tags=("overlay",)
+        )
+
+        # Bet stack visual
+        if self.bet > 0:
+            stack_x = int(w * 0.16)
+            stack_y = int(h * 0.58)
+            for i in range(3):
+                offset = i * 6
+                self.canvas.create_oval(stack_x, stack_y - offset, stack_x + 50, stack_y + 50 - offset,
+                                        fill=THEME["mahogany_hi"], outline=THEME["gold"], width=2,
+                                        tags=("overlay",))
+                self.canvas.create_oval(stack_x + 10, stack_y + 10 - offset, stack_x + 40, stack_y + 40 - offset,
+                                        fill=THEME["bg_bottom"], outline=THEME["gold_dark"], width=2,
+                                        tags=("overlay",))
+            self.canvas.create_text(stack_x + 25, stack_y + 70, text=f"Inzet €{self.bet}",
+                                    fill=THEME["text"], font=("Helvetica", 12, "bold"),
+                                    tags=("overlay",))
 
         # >>> FIX: ensure overlay always on top
         self.canvas.tag_raise("overlay")

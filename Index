@@ -170,15 +170,6 @@ class RoyalTableCanvas(tk.Canvas):
             self.create_oval(cx + 8, cy + 8, cx + 38, cy + 38, fill=THEME["bg_bottom"],
                              outline=THEME["gold_dark"], width=2, tags=("bg",))
 
-        # Decorative corner flourishes
-        flourish = 26
-        for (fx, fy) in [(inner_x0 + 18, inner_y0 + 18), (inner_x1 - 18, inner_y0 + 18),
-                         (inner_x0 + 18, inner_y1 - 18), (inner_x1 - 18, inner_y1 - 18)]:
-            self.create_oval(fx - flourish, fy - flourish, fx + flourish, fy + flourish,
-                             outline=THEME["gold_dark"], width=2, tags=("bg",))
-            self.create_oval(fx - flourish + 8, fy - flourish + 8, fx + flourish - 8, fy + flourish - 8,
-                             outline=THEME["gold"], width=2, tags=("bg",))
-
         # >>> FIX: always send bg to the very back
         self.tag_lower("bg")
 
@@ -367,7 +358,6 @@ class BlackjackRoyalApp:
         self.bet += amount
         self.bet_var.set(f"Inzet: €{self.bet}")
         self.status_var.set("Klaar voor de deal. Druk op New Game.")
-        self.render()
 
     def clear_bet(self) -> None:
         if not self.round_over:
@@ -375,7 +365,6 @@ class BlackjackRoyalApp:
         self.bet = 0
         self.bet_var.set("Inzet: €0")
         self.status_var.set("Plaats een inzet om te beginnen.")
-        self.render()
 
     def new_game(self) -> None:
         if self.bet <= 0:
@@ -500,15 +489,9 @@ class BlackjackRoyalApp:
             fill=THEME["muted"], font=("Helvetica", 14),
             tags=("overlay",)
         )
-        plaque_w = 520
-        plaque_h = 36
-        self.canvas.draw_rounded_rect(
-            w / 2 - plaque_w / 2, 96, w / 2 + plaque_w / 2, 96 + plaque_h,
-            r=16, fill=THEME["mahogany_hi"], outline=THEME["gold_dark"], width=2, tags=("overlay",)
-        )
         self.canvas.create_text(
-            w / 2, 114, text=f"{self.bankroll_var.get()}    {self.bet_var.get()}    {self.stats_var.get()}",
-            fill=THEME["text"], font=("Helvetica", 13, "bold"),
+            w / 2, 108, text=f"{self.bankroll_var.get()}    {self.bet_var.get()}    {self.stats_var.get()}",
+            fill=THEME["muted"], font=("Helvetica", 13, "bold"),
             tags=("overlay",)
         )
 
